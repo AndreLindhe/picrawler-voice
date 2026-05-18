@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+*.hef
+*.onnx
+*.pt
+*.tflite
+/config/prompts/*.local.*

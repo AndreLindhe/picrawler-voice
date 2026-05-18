@@ -1,0 +1,16 @@
+# Install the local robot_hat library first:
+#   pip install -e /home/penguin/robot-hat
+#
+# Then this project:
+#   pip install -e ".[dev]"
+
+pyyaml>=6.0
+httpx>=0.27
+faster-whisper>=1.0
+openwakeword>=0.6
+sounddevice>=0.4
+numpy>=1.26
+
+# Dev / test
+pytest>=8.0
+pytest-asyncio>=0.23

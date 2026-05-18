@@ -1,0 +1,48 @@
+[Unit]
+Description=PiCrawler voice-controlled robot
+Documentation=https://github.com/YOUR_USER/picrawler-voice
+# Network needed to reach the Ollama LLM server.
+After=network-online.target sound.target
+Wants=network-online.target
+# Restart if the sound card is re-plugged (optional; remove if not needed).
+PartOf=sound.target
+
+# Give up after 5 rapid restarts within 60 s (prevents a boot loop).
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+User=penguin
+Group=penguin
+
+# Hardware access — penguin is already in these groups, but being
+# explicit here means the service still works if run as another user.
+SupplementaryGroups=audio gpio i2c spi dialout
+
+WorkingDirectory=/home/penguin/picrawler-voice
+
+# PYTHONPATH so 'python -m robot.main' finds the src/ package tree.
+Environment=PYTHONPATH=/home/penguin/picrawler-voice/src
+
+# Load .env if present; the leading '-' means "ignore if missing".
+EnvironmentFile=-/home/penguin/picrawler-voice/.env
+
+ExecStart=/usr/bin/python -m robot.main
+
+# Restart automatically on crash (not on clean exit or SIGTERM).
+Restart=on-failure
+RestartSec=5s
+
+# Graceful shutdown: SIGTERM → wait 10 s → SIGKILL remaining children.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=10s
+
+# Log to the system journal (view with: journalctl -u picrawler-voice -f).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=picrawler-voice
+
+[Install]
+WantedBy=multi-user.target
