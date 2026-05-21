@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
+import time
 from typing import TYPE_CHECKING, Optional
+
+import numpy as np
 
 from ..core.events import Transcript, WakeWordDetected
 
@@ -15,6 +19,28 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DEFAULT_THRESHOLD = 0.5
+_POST_DETECTION_COOLDOWN_S = 3.0  # ignore wake word for this long after each detection
+_PING_FREQ_HZ = 880
+_PING_DURATION_S = 0.25
+_PING_RATE = 22050
+
+
+def _play_ping() -> None:
+    """Play a short confirmation tone via aplay (same ALSA chain as TTS)."""
+    try:
+        t = np.linspace(0, _PING_DURATION_S, int(_PING_RATE * _PING_DURATION_S), endpoint=False)
+        mono = (np.sin(2 * np.pi * _PING_FREQ_HZ * t) * 0.7 * 32767).astype(np.int16)
+        fade = int(len(mono) * 0.2)
+        mono[-fade:] = (mono[-fade:] * np.linspace(1.0, 0.0, fade)).astype(np.int16)
+        stereo = np.column_stack([mono, mono])
+        subprocess.run(
+            ["aplay", "-r", str(_PING_RATE), "-f", "S16_LE", "-c", "2", "-t", "raw", "-"],
+            input=stereo.tobytes(),
+            check=True,
+            capture_output=True,
+        )
+    except Exception:
+        logger.debug("wake_word: ping playback failed", exc_info=True)
 
 
 class WakeWordListener:
@@ -57,17 +83,24 @@ class WakeWordListener:
         self._audio.start()
         logger.info("wake_word: listening (threshold=%.2f)", self._threshold)
 
+        _cooldown_until: float = 0.0
         try:
             async for chunk in self._audio:
                 scores: dict = await asyncio.to_thread(model.predict, chunk)
                 best_score = max(scores.values()) if scores else 0.0
 
                 if best_score >= self._threshold:
+                    if time.monotonic() < _cooldown_until:
+                        continue  # still in cooldown — ignore re-trigger from ping echo
+                    _cooldown_until = time.monotonic() + _POST_DETECTION_COOLDOWN_S
                     logger.info("wake_word: detected (score=%.3f)", best_score)
                     self._bus.publish(WakeWordDetected(confidence=float(best_score)))
+                    await asyncio.to_thread(_play_ping)
+                    self._audio.drain()  # discard ping echo captured by the mic
                     await self._record_command()
                     # Drain chunks buffered during STT to avoid stale re-triggers.
                     self._audio.drain()
+                    _cooldown_until = time.monotonic() + _POST_DETECTION_COOLDOWN_S
 
         except asyncio.CancelledError:
             raise

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import datetime
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -12,6 +13,8 @@ from .events import (
     ObstacleCleared,
     ObstacleDetected,
     PerceptionUpdate,
+    PersonDetected,
+    StrangerDetected,
     Transcript,
     WakeWordDetected,
 )
@@ -29,6 +32,9 @@ class _WorldState:
 
     # Perception — list of {label, confidence, x, y, w, h}
     detections: List[Dict[str, Any]] = field(default_factory=list)
+
+    # Perception — people currently visible in camera frame
+    people_visible: List[str] = field(default_factory=list)
 
     # Voice
     last_transcript: str = ""
@@ -81,9 +87,23 @@ class StateManager:
                     s.last_wake_word_at = t
                 case Transcript(text=text, is_final=True):
                     s.last_transcript = text
+                case PersonDetected(name=name):
+                    if name and name not in s.people_visible:
+                        s.people_visible = [*s.people_visible, name]
+                case StrangerDetected():
+                    pass  # Handled by presence module directly
             s.updated_at = time.monotonic()
+
+    async def update_people_visible(self, names: List[str]) -> None:
+        """Called by PresenceDetector each frame to refresh the visible-people list."""
+        async with self._lock:
+            self._state.people_visible = names
+            self._state.updated_at = time.monotonic()
 
     async def snapshot(self) -> Dict[str, Any]:
         """JSON-serialisable dict. Feed this to the LLM as robot context."""
         async with self._lock:
-            return dataclasses.asdict(self._state)
+            d = dataclasses.asdict(self._state)
+            d["current_time"] = datetime.datetime.now().strftime("%H:%M")
+            d["current_date"] = datetime.datetime.now().strftime("%A, %d %B %Y")
+            return d

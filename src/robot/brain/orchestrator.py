@@ -5,9 +5,10 @@ import logging
 from typing import TYPE_CHECKING, Callable
 
 from ..behaviors.base import Behavior
+from ..behaviors.idle_patrol import IdlePatrol
 from ..brain.tools import TOOL_SCHEMAS, build_actions
-from ..core.events import SpeakRequest, Transcript
-from ..brain.arbiter import PRIORITY_VOICE
+from ..core.events import FaceEnrollRequest, SpeakRequest, Transcript
+from ..brain.arbiter import PRIORITY_PATROL, PRIORITY_VOICE
 
 if TYPE_CHECKING:
     from ..brain.arbiter import Arbiter
@@ -19,19 +20,56 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """\
-You are the brain of a 4-legged spider robot called PiCrawler.
-You receive voice commands and respond by calling tools to move the robot and \
-by giving a short spoken reply.
+You are PiCrawler, a friendly 4-legged spider robot with a voice interface.
+You can both control the robot body AND hold a general conversation.
 
 Rules:
-- Keep spoken replies to 1–2 short sentences.
-- Always call at least one tool when the user asks for movement.
-- If the command is unclear, ask for clarification instead of guessing.
-- Be friendly and a little playful.
+- Keep all spoken replies to 1–3 short sentences — you are speaking aloud.
+- For movement requests, always call the appropriate tool AND give a short spoken reply.
+- For general questions (time, facts, jokes, weather, opinions, etc.) just answer conversationally — no tool call needed.
+- The robot state JSON includes `current_time` and `current_date` — use them when asked.
+- Be friendly, curious, and a little playful.
+- If a question is outside your knowledge, say so briefly rather than guessing.
 
-The robot can move forward/backward, turn left/right, look in four directions,
-wave, and stop.  It explores autonomously when idle.\
+Movement: forward, backward, turn left/right, look in four directions, wave, stop.
+Use start_patrol when asked to patrol, explore, wander, or roam.
+Any movement command (including stop) cancels patrol and returns the robot to standby.
+
+The robot has a camera that recognises people.
+`people_visible` lists names of people currently in view.
+- When asked "who is this?" or "do you know me?", describe who you can see.
+- When asked to remember someone ("remember me, my name is X"), call enroll_face.\
 """
+
+
+_COMMAND_KEYWORDS = frozenset({
+    # movement
+    "forward", "ahead", "advance", "proceed", "come", "approach",
+    "backward", "back", "reverse", "retreat",
+    "walk", "move", "go", "run",
+    # turning
+    "turn", "rotate", "spin", "face", "swing",
+    "left", "right",
+    # looking
+    "look", "peek", "glance", "check", "watch", "see",
+    "up", "down",
+    # gestures
+    "wave", "hello", "greet", "hi",
+    # stopping
+    "stop", "halt", "freeze", "stay", "sit",
+    # patrol
+    "patrol", "wander", "explore", "roam", "autonomous",
+    # face
+    "remember", "enroll", "learn", "name",
+})
+
+
+def _tools_for(text: str) -> list:
+    """Return tool schemas only when the transcript contains a command keyword.
+    For pure questions/conversation the small local model reliably answers in
+    text when no tools are offered — and reliably calls a random tool when they are."""
+    words = set(text.lower().split())
+    return TOOL_SCHEMAS if words & _COMMAND_KEYWORDS else []
 
 
 class _VoiceAction(Behavior):
@@ -118,16 +156,33 @@ class Orchestrator:
         ]
 
         try:
-            msg = await self._llm.chat(messages, tools=TOOL_SCHEMAS)
+            msg = await self._llm.chat(messages, tools=_tools_for(event.text))
         except Exception:
             logger.exception("orchestrator: LLM call failed")
             self._bus.publish(SpeakRequest(text="Sorry, I couldn't reach my brain right now."))
             return
 
-        # Execute any tool calls as a voice action.
+        # Execute any tool calls.
         tool_calls = msg.get("tool_calls") or []
-        if tool_calls:
-            actions = build_actions(self._ctrl, tool_calls)
+        motor_calls = []
+        for call in tool_calls:
+            fn = call.get("function", {})
+            name = fn.get("name")
+            args: dict = fn.get("arguments") or {}
+            if "parameters" in args and isinstance(args["parameters"], dict):
+                args = args["parameters"]
+            if name == "enroll_face":
+                person = args.get("name", "").strip()
+                if person:
+                    self._bus.publish(FaceEnrollRequest(name=person))
+            elif name == "start_patrol":
+                patrol = IdlePatrol(self._bus, self._state, initial_turn=True)
+                self._arbiter.request(patrol, PRIORITY_PATROL, reason="voice: patrol")
+            else:
+                motor_calls.append(call)
+
+        if motor_calls:
+            actions = build_actions(self._ctrl, motor_calls)
             if actions:
                 behavior = _VoiceAction(self._bus, self._state, actions, self._ctrl)
                 self._arbiter.request(behavior, PRIORITY_VOICE, reason=event.text[:40])

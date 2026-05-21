@@ -29,6 +29,7 @@ class Behavior(ABC):
     # Priority constants — match the arbiter's values.
     PRIORITY_PATROL = 0
     PRIORITY_VOICE = 1
+    PRIORITY_NAVIGATE = 2   # Phase 2: TaskBehavior for voice-triggered tasks
 
     def __init__(self, bus: "MessageBus", state: "StateManager") -> None:
         self.bus = bus

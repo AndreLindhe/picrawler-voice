@@ -2,10 +2,40 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time as _time_mod
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Servos are grouped in legs of 3. Activating all 12 at once trips the Pi's
+# overcurrent protection. We patch robot_hat.robot.time.sleep during Picrawler
+# construction so that after every 3rd servo (one complete leg) we wait long
+# enough for those servos to settle before the next leg starts.
+_LEG_SIZE = 3
+_INTER_LEG_PAUSE_S = 0.8
+
+
+def _make_picrawler():
+    """Construct Picrawler with per-leg inrush limiting."""
+    import robot_hat.robot as _rr
+    from picrawler import Picrawler  # type: ignore[import]
+
+    _count = [0]
+    _orig_sleep = _rr.time.sleep
+
+    def _leg_sleep(t: float) -> None:
+        _count[0] += 1
+        if _count[0] % _LEG_SIZE == 0:
+            _orig_sleep(_INTER_LEG_PAUSE_S)
+        else:
+            _orig_sleep(t)
+
+    _rr.time.sleep = _leg_sleep
+    try:
+        return Picrawler()
+    finally:
+        _rr.time.sleep = _orig_sleep
 
 # Module-level singleton — set when CrawlerController is first constructed.
 # Behaviours and emergency-stop paths call get_controller() to reach it.
@@ -42,10 +72,9 @@ class CrawlerController:
 
     def __init__(self) -> None:
         global _instance
-        from picrawler import Picrawler  # type: ignore[import]
 
-        logger.info("controller: initialising Picrawler (resets MCU, moves servos to home)")
-        self._crawler = Picrawler()
+        logger.info("controller: initialising Picrawler (one leg at a time to limit inrush current)")
+        self._crawler = _make_picrawler()
         # Single worker = all servo calls are strictly serialised.
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="crawler")
         self._lock = asyncio.Lock()

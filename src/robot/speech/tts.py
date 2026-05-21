@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 import subprocess
+import sys
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -13,8 +15,18 @@ from ..core.events import SpeakRequest
 
 logger = logging.getLogger(__name__)
 
-# Piper model defaults — override via TextToSpeech(model_path=...).
 _DEFAULT_SAMPLE_RATE = 22050
+
+
+def _find_piper() -> Optional[str]:
+    """Find piper binary: system PATH first, then the venv that runs this process."""
+    p = shutil.which("piper")
+    if p:
+        return p
+    venv_bin = os.path.join(os.path.dirname(sys.executable), "piper")
+    if os.path.isfile(venv_bin) and os.access(venv_bin, os.X_OK):
+        return venv_bin
+    return None
 
 
 class TextToSpeech:
@@ -59,8 +71,10 @@ class TextToSpeech:
 
     def _speak_sync(self, text: str) -> None:
         """Blocking synthesis + playback — runs in a thread."""
-        if self._model_path and shutil.which("piper"):
-            self._speak_piper(text)
+        piper_bin = _find_piper()
+        if self._model_path and piper_bin:
+            logger.debug("tts: using piper at %s", piper_bin)
+            self._speak_piper(text, piper_bin)
         elif shutil.which("espeak-ng"):
             self._speak_espeak(text)
         elif shutil.which("espeak"):
@@ -68,18 +82,20 @@ class TextToSpeech:
         else:
             logger.warning("tts: no TTS backend found (piper/espeak-ng/espeak)")
 
-    def _speak_piper(self, text: str) -> None:
+    def _speak_piper(self, text: str, piper_bin: str) -> None:
         piper = subprocess.Popen(
-            ["piper", "--model", self._model_path, "--output-raw"],
+            [piper_bin, "--model", self._model_path, "--output-raw"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
+        # Piper outputs mono PCM; the ALSA plug layer upmixes to stereo for the HifiBerry DAC.
         aplay = subprocess.Popen(
             [
                 "aplay",
                 "-r", str(self._sample_rate),
                 "-f", "S16_LE",
+                "-c", "1",
                 "-t", "raw",
                 "-",
             ],

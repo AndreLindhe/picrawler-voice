@@ -46,12 +46,18 @@ class SafetyLoop:
         self._state = state
         self._blocked: bool = False
         self._failure_count: int = 0
+        self._last_distance: Optional[float] = None
 
         if sonar is not None:
             self._sonar = sonar
         else:
             from robot_hat import Ultrasonic, Pin  # type: ignore[import]
             self._sonar = Ultrasonic(Pin(_TRIG_PIN), Pin(_ECHO_PIN))
+
+    @property
+    def last_distance(self) -> Optional[float]:
+        """Most recent valid sonar reading. Updated at ~10 Hz by the safety loop."""
+        return self._last_distance
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -108,7 +114,9 @@ class SafetyLoop:
 
         self._failure_count = 0
         readings.sort()
-        return readings[len(readings) // 2]  # median
+        dist = readings[len(readings) // 2]  # median
+        self._last_distance = dist
+        return dist
 
     # ------------------------------------------------------------------
     # State machine

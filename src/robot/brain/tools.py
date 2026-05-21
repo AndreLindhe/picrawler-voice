@@ -14,13 +14,18 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "move",
-            "description": "Move the robot forward or backward.",
+            "description": (
+                "Walk the robot forward or backward. "
+                "Use for: go, walk, move, advance, come, approach, proceed, "
+                "go back, back up, reverse, retreat."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "direction": {
                         "type": "string",
                         "enum": ["forward", "backward"],
+                        "description": "'forward' to walk ahead, 'backward' to walk back.",
                     },
                     "steps": {
                         "type": "integer",
@@ -36,7 +41,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "turn",
-            "description": "Turn the robot left or right in place.",
+            "description": (
+                "Rotate the robot left or right on the spot. "
+                "Use for: turn, spin, rotate, face left/right, swing left/right. "
+                "Set wide=true for a larger angle turn."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -46,7 +55,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                     "wide": {
                         "type": "boolean",
-                        "description": "True for a wider angle turn.",
+                        "description": "True for a wider angle turn (e.g. 'spin around', 'turn all the way').",
                         "default": False,
                     },
                 },
@@ -58,7 +67,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "look",
-            "description": "Aim the robot's head/camera in a direction.",
+            "description": (
+                "Aim the robot's head and camera in a direction. "
+                "Use for: look, peek, face, glance, check, see, watch. "
+                "Examples: 'look left', 'look up', 'check what's behind', 'look down'."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -75,7 +88,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "wave",
-            "description": "Make the robot wave as a friendly gesture.",
+            "description": (
+                "Make the robot wave a leg as a friendly greeting. "
+                "Use for: wave, say hello, greet, hi, hey there."
+            ),
             "parameters": {"type": "object", "properties": {}},
         },
     },
@@ -83,8 +99,43 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "stop",
-            "description": "Stop all movement and sit the robot down.",
+            "description": (
+                "Stop all movement immediately and sit the robot down. "
+                "Use for: stop, halt, freeze, stay, don't move, sit down, stand still."
+            ),
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "start_patrol",
+            "description": (
+                "Start autonomous patrol mode: the robot wanders, turns, and explores on its own. "
+                "Use for: patrol, wander, explore, roam, go for a walk, look around, autonomous mode."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "enroll_face",
+            "description": (
+                "Save the face of the person in front of the camera with a name. "
+                "Use for: remember me, my name is X / remember this person, their name is X / "
+                "learn my face / I am X / call me X."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The person's name to associate with their face.",
+                    },
+                },
+                "required": ["name"],
+            },
         },
     },
 ]
@@ -106,6 +157,9 @@ def build_actions(
         fn = call.get("function", {})
         name = fn.get("name", "")
         args: dict[str, Any] = fn.get("arguments", {}) or {}
+        # Some small models wrap args as {"function": "...", "parameters": {...}}
+        if "parameters" in args and isinstance(args["parameters"], dict):
+            args = args["parameters"]
 
         coro = _build_one(ctrl, name, args)
         if coro is not None:

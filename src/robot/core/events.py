@@ -81,3 +81,38 @@ class SpeakRequest:
     text: str = ""
     priority: int = 0
     timestamp: float = field(default_factory=_now, compare=False)
+
+
+@dataclass(frozen=True)
+class PersonDetected:
+    topic: ClassVar[str] = "perception.person_detected"
+    name: str = ""
+    confidence: float = 0.0
+    timestamp: float = field(default_factory=_now, compare=False)
+
+
+@dataclass(frozen=True)
+class StrangerDetected:
+    topic: ClassVar[str] = "perception.stranger_detected"
+    timestamp: float = field(default_factory=_now, compare=False)
+
+
+@dataclass(frozen=True)
+class FaceEnrollRequest:
+    topic: ClassVar[str] = "perception.enroll_request"
+    name: str = ""
+    timestamp: float = field(default_factory=_now, compare=False)
+
+
+@dataclass(frozen=True)
+class TaskRequested:
+    """
+    Published by the Orchestrator when a voice command is a multi-step task
+    rather than a simple movement command.
+    Phase 2: a TaskBehavior subscribes to this and drives the planner.
+    Examples: "find a red ball", "what do you see", "explore the room".
+    """
+    topic: ClassVar[str] = "brain.task_requested"
+    goal: str = ""
+    source: str = "voice"   # "voice" | "autonomous"
+    timestamp: float = field(default_factory=_now, compare=False)

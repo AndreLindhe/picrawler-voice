@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 PRIORITY_PATROL = 0
 PRIORITY_VOICE = 1
+PRIORITY_NAVIGATE = 2   # reserved for Phase 2 TaskBehavior (voice-triggered tasks)
 
 
 class _Request:

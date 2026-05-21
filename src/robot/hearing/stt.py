@@ -59,6 +59,7 @@ class SpeechToText:
         """
         chunks: list[np.ndarray] = []
         silence_count = 0
+        speech_started = False
         chunk_s = audio_input.chunk_samples / audio_input.sample_rate
         max_chunks = int(max_seconds / chunk_s)
 
@@ -66,13 +67,14 @@ class SpeechToText:
             chunk = await audio_input.read()
             chunks.append(chunk)
             rms = float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
-            if rms < _SILENCE_RMS_THRESHOLD:
+            if rms >= _SILENCE_RMS_THRESHOLD:
+                speech_started = True
+                silence_count = 0
+            elif speech_started:
                 silence_count += 1
                 if silence_count >= _SILENCE_CHUNKS_NEEDED:
                     logger.debug("stt: end-of-speech detected after %d chunks", len(chunks))
                     break
-            else:
-                silence_count = 0
 
         if not chunks:
             return ""
