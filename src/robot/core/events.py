@@ -105,6 +105,14 @@ class FaceEnrollRequest:
 
 
 @dataclass(frozen=True)
+class BatteryUpdate:
+    topic: ClassVar[str] = "perception.battery_update"
+    voltage: float = 0.0
+    percent: int = 0
+    timestamp: float = field(default_factory=_now, compare=False)
+
+
+@dataclass(frozen=True)
 class BatteryLow:
     topic: ClassVar[str] = "perception.battery_low"
     voltage: float = 0.0

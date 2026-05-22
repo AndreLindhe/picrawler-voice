@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from ..core.bus import MessageBus
     from ..core.state import StateManager
 
-from ..core.events import BatteryCritical, BatteryLow, SpeakRequest
+from ..core.events import BatteryCritical, BatteryLow, BatteryUpdate, SpeakRequest
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,8 @@ class BatteryMonitor:
         if force_log or (now - self._last_log >= _LOG_INTERVAL_S):
             logger.info("battery: %.2f V  %d%%", volts, pct)
             self._last_log = now
+
+        self._bus.publish(BatteryUpdate(voltage=volts, percent=pct))
 
         if volts < _VOLT_CRITICAL:
             interval = _WARN_INTERVAL_CRIT_S

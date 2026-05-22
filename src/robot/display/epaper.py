@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 from ..core.events import (
     BatteryCritical,
     BatteryLow,
+    BatteryUpdate,
     BehaviorEnded,
     BehaviorStarted,
     ObstacleCleared,
@@ -103,7 +104,7 @@ class EpaperDisplay:
         await self._draw()
 
         topics = [
-            BatteryLow.topic, BatteryCritical.topic,
+            BatteryUpdate.topic, BatteryLow.topic, BatteryCritical.topic,
             BehaviorStarted.topic, BehaviorEnded.topic,
             ObstacleDetected.topic, ObstacleCleared.topic,
             WakeWordDetected.topic, Transcript.topic,
@@ -118,7 +119,7 @@ class EpaperDisplay:
                     await self._draw()
 
     def _handle_event(self, event) -> None:
-        if isinstance(event, (BatteryLow, BatteryCritical)):
+        if isinstance(event, (BatteryUpdate, BatteryLow, BatteryCritical)):
             self._battery_pct = event.percent
             self._battery_v   = event.voltage
         elif isinstance(event, BehaviorStarted):
