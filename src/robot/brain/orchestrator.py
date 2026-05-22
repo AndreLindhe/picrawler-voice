@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Optional
 
 from ..behaviors.base import Behavior
 from ..behaviors.idle_patrol import IdlePatrol
 from ..brain.tools import TOOL_SCHEMAS, build_actions
 from ..core.events import FaceEnrollRequest, SpeakRequest, Transcript
-from ..brain.arbiter import PRIORITY_PATROL, PRIORITY_VOICE
+from ..brain.arbiter import PRIORITY_PATROL, PRIORITY_VOICE, PRIORITY_NAVIGATE
 
 if TYPE_CHECKING:
     from ..brain.arbiter import Arbiter
     from ..brain.llm_client import OllamaClient
+    from ..brain.nav_memory import NavMemory
+    from ..brain.planner import Planner
     from ..core.bus import MessageBus
     from ..core.state import StateManager
     from ..motor.controller import CrawlerController
+    from ..motor.safety import SafetyLoop
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +64,8 @@ _COMMAND_KEYWORDS = frozenset({
     "patrol", "wander", "explore", "roam", "autonomous",
     # face
     "remember", "enroll", "learn", "name",
+    # tasks (Phase 2)
+    "find", "search", "locate", "fetch", "bring", "navigate",
 })
 
 
@@ -114,12 +119,19 @@ class Orchestrator:
         arbiter: "Arbiter",
         llm: "OllamaClient",
         ctrl: "CrawlerController",
+        *,
+        planner: "Optional[Planner]" = None,
+        memory: "Optional[NavMemory]" = None,
+        safety: "Optional[SafetyLoop]" = None,
     ) -> None:
         self._bus = bus
         self._state = state
         self._arbiter = arbiter
         self._llm = llm
         self._ctrl = ctrl
+        self._planner = planner
+        self._memory = memory
+        self._safety = safety
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -178,6 +190,22 @@ class Orchestrator:
             elif name == "start_patrol":
                 patrol = IdlePatrol(self._bus, self._state, initial_turn=True)
                 self._arbiter.request(patrol, PRIORITY_PATROL, reason="voice: patrol")
+            elif name == "start_task":
+                goal = args.get("goal", "").strip()
+                if goal and self._planner and self._memory and self._safety:
+                    from ..behaviors.task_behavior import TaskBehavior
+                    task = TaskBehavior(
+                        self._bus, self._state,
+                        goal=goal,
+                        planner=self._planner,
+                        memory=self._memory,
+                        safety=self._safety,
+                        controller=self._ctrl,
+                    )
+                    self._arbiter.request(task, PRIORITY_NAVIGATE, reason=f"task: {goal[:40]}")
+                else:
+                    logger.warning("orchestrator: start_task called but planner/memory/safety not wired up")
+                    self._bus.publish(SpeakRequest(text="Sorry, I can't run tasks right now."))
             else:
                 motor_calls.append(call)
 

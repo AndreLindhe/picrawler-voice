@@ -151,11 +151,11 @@ def build_nav_executor(
         return {"sonar_cm": round(dist, 1), "status": status}
 
     async def _move(direction: str = "forward", steps: int = 2) -> str:
-        steps = max(1, min(int(steps), 6))
+        steps = max(1, min(int(steps), 3))  # cap at 3 — avoids long runs ending in abrupt stop
         if direction == "forward":
-            await ctrl.forward(speed=65, steps=steps)
+            await ctrl.forward(steps=steps)
         else:
-            await ctrl.backward(speed=65, steps=steps)
+            await ctrl.backward(steps=steps)
         return f"Moved {direction} {steps} steps."
 
     async def _turn(direction: str = "left", wide: bool = False) -> str:
@@ -163,7 +163,7 @@ def build_nav_executor(
             fn = ctrl.turn_left_angle if wide else ctrl.turn_left
         else:
             fn = ctrl.turn_right_angle if wide else ctrl.turn_right
-        await fn(speed=65, steps=2)
+        await fn(steps=1)
         return f"Turned {direction} ({'wide' if wide else 'normal'})."
 
     async def _speak(text: str = "") -> None:

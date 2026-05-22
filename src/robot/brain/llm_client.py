@@ -140,5 +140,8 @@ class FallbackOllamaClient:
         try:
             return await self._fallback.chat(messages, tools)
         except httpx.HTTPStatusError as exc:
-            logger.error("llm: fallback server error %s — %s", exc.response.status_code, exc.response.text[:200])
+            logger.error("llm: fallback HTTP error %s — %s", exc.response.status_code, exc.response.text[:200])
+            raise
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as exc:
+            logger.error("llm: fallback server also unreachable — %s", exc)
             raise

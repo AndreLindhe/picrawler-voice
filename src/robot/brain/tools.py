@@ -120,6 +120,27 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "start_task",
+            "description": (
+                "Start a multi-step autonomous task that requires planning and movement. "
+                "Use for: find X, search for X, look for X, locate X, fetch X, bring X, "
+                "explore the room, navigate to X, check what's over there, describe your surroundings."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {
+                        "type": "string",
+                        "description": "A clear one-sentence description of the task goal.",
+                    },
+                },
+                "required": ["goal"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "enroll_face",
             "description": (
                 "Save the face of the person in front of the camera with a name. "

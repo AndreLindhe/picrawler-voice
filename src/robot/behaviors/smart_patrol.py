@@ -15,6 +15,7 @@ Phase 2: scene.objects will be populated by Hailo YOLO — no changes needed her
 import asyncio
 import logging
 import random
+import time
 from typing import Optional, TYPE_CHECKING
 
 from .base import Behavior
@@ -39,6 +40,9 @@ _WALK_SPEED = 70
 _POSE_SPEED = 50
 _STEPS_BEFORE_TURN = 3
 _TURN_PROBABILITY = 0.45
+# After a failed plan (LLM unavailable), don't retry for this long.
+# Robot runs the obstacle reflex instead so it never stands still indefinitely.
+_PLAN_FAIL_COOLDOWN_S = 30.0
 
 _NAV_SYSTEM_PROMPT = """\
 You are the navigation brain of PiCrawler, a 4-legged spider robot.
@@ -80,6 +84,7 @@ class SmartPatrol(Behavior):
         self._memory = memory
         self._safety = safety
         self._ctrl = controller
+        self._plan_blocked_until: float = 0.0  # monotonic time — skip planner until then
 
     # ------------------------------------------------------------------
     # Behavior contract
@@ -95,7 +100,11 @@ class SmartPatrol(Behavior):
             dist = self._safety.last_distance
 
             if dist is not None and dist <= _PLAN_AT_CM:
-                await self._plan_around(ctrl, dist)
+                if time.monotonic() >= self._plan_blocked_until:
+                    await self._plan_around(ctrl, dist)
+                else:
+                    # LLM recently unavailable — use simple obstacle reflex instead.
+                    await self._obstacle_reflex(ctrl)
                 steps_since_turn = 0
             else:
                 # Free space — wander randomly like IdlePatrol.
@@ -142,7 +151,18 @@ class SmartPatrol(Behavior):
                 max_steps=10,
             )
         except asyncio.CancelledError:
-            raise  # let the arbiter handle preemption cleanly
+            raise
+        except Exception:
+            logger.warning("smart_patrol: planner raised — falling back to obstacle reflex for %.0fs", _PLAN_FAIL_COOLDOWN_S)
+            self._plan_blocked_until = time.monotonic() + _PLAN_FAIL_COOLDOWN_S
+            await self._obstacle_reflex(ctrl)
+            return
+
+        if result.summary == "LLM error":
+            logger.warning("smart_patrol: LLM unavailable — obstacle reflex for %.0fs", _PLAN_FAIL_COOLDOWN_S)
+            self._plan_blocked_until = time.monotonic() + _PLAN_FAIL_COOLDOWN_S
+            await self._obstacle_reflex(ctrl)
+            return
 
         logger.info(
             "smart_patrol: plan complete — success=%s steps=%d summary=%r",
@@ -159,6 +179,17 @@ class SmartPatrol(Behavior):
             success=result.success,
             summary=result.summary,
         )
+
+    async def _obstacle_reflex(self, ctrl: CrawlerController) -> None:
+        """Dumb fallback when LLM is unavailable: back up, turn, continue."""
+        logger.info("smart_patrol: obstacle reflex — backing up and turning")
+        await ctrl.backward(steps=2)
+        direction = random.choice(["left", "right"])
+        if random.random() < 0.5:
+            fn = ctrl.turn_left_angle if direction == "left" else ctrl.turn_right_angle
+        else:
+            fn = ctrl.turn_left if direction == "left" else ctrl.turn_right
+        await fn(steps=1)
 
     # ------------------------------------------------------------------
     # Wander helpers

@@ -73,12 +73,15 @@ class TextToSpeech:
         """Blocking synthesis + playback — runs in a thread."""
         piper_bin = _find_piper()
         if self._model_path and piper_bin:
-            logger.debug("tts: using piper at %s", piper_bin)
+            logger.info("tts: piper → aplay [%s]", self._model_path)
             self._speak_piper(text, piper_bin)
+        elif self._model_path and not piper_bin:
+            logger.error("tts: PIPER_MODEL is set but piper binary not found — no audio")
         elif shutil.which("espeak-ng"):
             self._speak_espeak(text)
         elif shutil.which("espeak"):
-            subprocess.run(["espeak", text], check=True, capture_output=True)
+            logger.warning("tts: falling back to espeak")
+            subprocess.run(["espeak", text], capture_output=True)
         else:
             logger.warning("tts: no TTS backend found (piper/espeak-ng/espeak)")
 
@@ -87,7 +90,7 @@ class TextToSpeech:
             [piper_bin, "--model", self._model_path, "--output-raw"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
         # Piper outputs mono PCM; the ALSA plug layer upmixes to stereo for the HifiBerry DAC.
         aplay = subprocess.Popen(
@@ -101,16 +104,26 @@ class TextToSpeech:
             ],
             stdin=piper.stdout,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
         )
         piper.stdin.write(text.encode())
         piper.stdin.close()
         piper.wait()
         aplay.wait()
 
+        if piper.returncode != 0:
+            err = (piper.stderr.read() or b"").decode(errors="replace").strip()
+            logger.error("tts: piper exited %d — %s", piper.returncode, err)
+        if aplay.returncode != 0:
+            err = (aplay.stderr.read() or b"").decode(errors="replace").strip()
+            logger.error("tts: aplay exited %d — %s", aplay.returncode, err)
+
     def _speak_espeak(self, text: str) -> None:
-        subprocess.run(
+        logger.warning("tts: falling back to espeak-ng (no piper model configured)")
+        result = subprocess.run(
             ["espeak-ng", "-s", "140", text],
-            check=True,
             capture_output=True,
         )
+        if result.returncode != 0:
+            logger.error("tts: espeak-ng exited %d — %s", result.returncode,
+                         result.stderr.decode(errors="replace").strip())

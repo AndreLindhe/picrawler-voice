@@ -51,7 +51,7 @@ async def _main() -> None:
     # ------------------------------------------------------------------ #
     ollama_host = os.environ.get("OLLAMA_HOST", "http://192.168.50.100:11434")
     ollama_model = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
-    ollama_fallback_host = os.environ.get("OLLAMA_FALLBACK_HOST", "http://localhost:8000")
+    ollama_fallback_host = os.environ.get("OLLAMA_FALLBACK_HOST", "http://localhost:11434")
     ollama_fallback_model = os.environ.get("OLLAMA_FALLBACK_MODEL", "llama3.2:1b")
     whisper_model = os.environ.get("WHISPER_MODEL", "tiny")
     piper_model = os.environ.get("PIPER_MODEL", "")           # path to .onnx
@@ -123,7 +123,12 @@ async def _main() -> None:
         state,
         make_patrol=lambda: SmartPatrol(bus, state, planner, nav_memory, safety),
     )
-    orchestrator = Orchestrator(bus, state, arbiter, llm, ctrl)
+    orchestrator = Orchestrator(
+        bus, state, arbiter, llm, ctrl,
+        planner=planner,
+        memory=nav_memory,
+        safety=safety,
+    )
 
     # ------------------------------------------------------------------ #
     # Launch                                                               #
