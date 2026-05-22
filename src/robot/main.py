@@ -41,6 +41,7 @@ async def _main() -> None:
     from .hearing.wake_word import WakeWordListener
     from .motor.controller import CrawlerController
     from .motor.safety import SafetyLoop
+    from .perception.battery import BatteryMonitor
     from .perception.camera import Camera
     from .perception.people_registry import PeopleRegistry
     from .perception.presence import PresenceDetector
@@ -102,6 +103,7 @@ async def _main() -> None:
     # Perception                                                           #
     # ------------------------------------------------------------------ #
     logger.info("main: initialising perception")
+    battery = BatteryMonitor(bus, state)
     registry = PeopleRegistry(base_path=face_registry_path, threshold=face_threshold)
     camera = Camera()
     presence = PresenceDetector(bus, state, camera, registry)
@@ -135,6 +137,7 @@ async def _main() -> None:
     # ------------------------------------------------------------------ #
     tasks = [
         asyncio.create_task(safety.run(),       name="safety"),
+        asyncio.create_task(battery.run(),      name="battery"),
         asyncio.create_task(wake_word.run(),    name="wake_word"),
         asyncio.create_task(tts.run(),          name="tts"),
         asyncio.create_task(arbiter.run(),      name="arbiter"),

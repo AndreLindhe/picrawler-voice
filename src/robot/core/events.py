@@ -105,6 +105,22 @@ class FaceEnrollRequest:
 
 
 @dataclass(frozen=True)
+class BatteryLow:
+    topic: ClassVar[str] = "perception.battery_low"
+    voltage: float = 0.0
+    percent: int = 0
+    timestamp: float = field(default_factory=_now, compare=False)
+
+
+@dataclass(frozen=True)
+class BatteryCritical:
+    topic: ClassVar[str] = "perception.battery_critical"
+    voltage: float = 0.0
+    percent: int = 0
+    timestamp: float = field(default_factory=_now, compare=False)
+
+
+@dataclass(frozen=True)
 class TaskRequested:
     """
     Published by the Orchestrator when a voice command is a multi-step task
